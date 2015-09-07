@@ -1,0 +1,97 @@
+#!/bin/bash
+###########
+# 2015.09.04 r.aviolat@gmail.com - initial file creation
+# check the OSPF topology of the network using birdc and birdc6
+
+help="Usage: $0 -o [rt(number of routes), gw(number of default gateways), nb(neighbors)] -v [4(ipv4), 6(ipv6) -c <critical> -w <warning>"
+proto_name="pub_ospf"
+
+while getopts 'o:c:w:v:' opt; do
+  case $opt in
+    o)
+      object="${OPTARG}"
+      ;;
+    c)
+      critical="${OPTARG}"
+      ;;
+    v)
+      version="${OPTARG}"
+      ;;
+    w)
+      warning="${OPTARG}"
+      ;;
+    \?|:)
+      echo ${help}
+      exit 3
+      ;;
+  esac
+done
+
+# standard Icinga / Nagios plugin return codes.
+STATUS_OK=0
+STATUS_WARNING=1
+STATUS_CRITICAL=2
+STATUS_UNKNOWN=3
+
+# check that the following values were correctly set
+if [ -z ${object} ] || [ -z ${version} ] || [ -z ${warning} ] || [ -z ${critical} ]  || [ "$critical" -gt "$warning" ] ; then
+  echo ${help}
+  exit 3
+fi
+
+if [ $version == "4" ]; then
+  ospf_ver="OSPFv2"
+  dflt_gw="0.0.0.0/0" 
+  bird_cli="birdc"
+
+elif [ $version == "6" ]; then
+  ospf_ver="OSPFv3"
+  dflt_gw="::/0" 
+  bird_cli="birdc6"
+
+else
+  echo ${help}
+  exit 3
+fi
+
+if [ $object == "rt" ]; then
+  nb_routes=$($bird_cli show route $proto_name all count | grep routes | cut -d " " -f 1)
+  value=$nb_routes
+  text="$ospf_ver Routes learned"
+  perf_text="ospf_routes"
+
+elif [ $object == "gw" ]; then
+  nb_dfltgw=$($bird_cli show ospf state | grep -c $dflt_gw)
+  value=$nb_dfltgw
+  text="$ospf_ver default gateways"
+  perf_text="ospf_default_gateways"
+
+elif [ $object == "nb" ]; then
+  ospf_neighbors=$($bird_cli show ospf neighbors | grep -c "eth0")
+  value=$ospf_neighbors
+  text="$ospf_ver neigbors"
+  perf_text="ospf_neighbors"
+
+else
+  echo ${help}
+  exit 3
+fi
+
+# compare the actual vlaue with the critical and warning values
+if [ "$value" -lt "$warning" ]; then
+ 
+  if [ "$value" -lt "$critical" ]; then
+    echo "CRITICAL - $text $value|$perf_text=$value;;;;"
+    exit 2
+ 
+  else
+    echo "WARNING - $text $value|$pref_text=$value;;;;"
+    exit 1
+  fi  
+
+else
+  echo "OK - $text $value|$perf_text=$value;;;;"
+  exit 0
+
+fi
+
